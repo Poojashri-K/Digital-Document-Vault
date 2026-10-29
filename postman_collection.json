@@ -1,0 +1,233 @@
+{
+  "info": {
+    "name": "Digital Document Vault API",
+    "_postman_id": "c1f7b82e-9d2a-4a6f-9988-document-vault-v1",
+    "description": "Comprehensive Postman test collection for the Digital Document Vault API, covering Authentication, Document Lifecycle, Secure Downloads, Zero-Trust Sharing, Security Audit Trails, and System Administration.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "ownerUsername", "value": "owner@vault.local", "type": "string" },
+    { "key": "ownerPassword", "value": "OwnerPassword123!", "type": "string" },
+    { "key": "colleagueUsername", "value": "colleague@vault.local", "type": "string" },
+    { "key": "colleaguePassword", "value": "ColleaguePassword123!", "type": "string" },
+    { "key": "sysadminUsername", "value": "sysadmin@vault.local", "type": "string" },
+    { "key": "sysadminPassword", "value": "SysAdminPass123!", "type": "string" },
+    { "key": "documentId", "value": "", "type": "string" },
+    { "key": "shareId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Login - Document Owner",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('User details returned', () => {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.username).to.eql('owner@vault.local');",
+                  "    pm.expect(json.data.role).to.eql('ROLE_USER');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{ownerUsername}}\",\n  \"password\": \"{{ownerPassword}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          }
+        },
+        {
+          "name": "Get Current Session (Me)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/auth/me", "host": ["{{baseUrl}}"], "path": ["api", "auth", "me"] }
+          }
+        },
+        {
+          "name": "Register New User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"analyst_test\",\n  \"email\": \"analyst_test@vault.local\",\n  \"fullName\": \"Senior Security Analyst\",\n  \"password\": \"SecurePass1234!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] }
+          }
+        },
+        {
+          "name": "Logout Session",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/auth/logout", "host": ["{{baseUrl}}"], "path": ["api", "auth", "logout"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Document Management",
+      "item": [
+        {
+          "name": "List Owned Documents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "var json = pm.response.json();",
+                  "if (json.data.content && json.data.content.length > 0) {",
+                  "    pm.collectionVariables.set('documentId', json.data.content[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/documents?page=0&size=10&sortBy=createdAt&sortDirection=DESC",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sortBy", "value": "createdAt" },
+                { "key": "sortDirection", "value": "DESC" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Document Metadata & Versions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/metadata",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "{{documentId}}", "metadata"]
+            }
+          }
+        },
+        {
+          "name": "Download Document (Strict Content-Disposition)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/download",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "{{documentId}}", "download"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Sharing & Access Control",
+      "item": [
+        {
+          "name": "Share Document with Registered User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('shareId', json.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"colleague@vault.local\",\n  \"permissionType\": \"DOWNLOAD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/shares",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "{{documentId}}", "shares"]
+            }
+          }
+        },
+        {
+          "name": "List Documents Shared with Current User",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/shared-with-me?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "shared-with-me"]
+            }
+          }
+        },
+        {
+          "name": "Revoke Document Share",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/shares/{{shareId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "documents", "{{documentId}}", "shares", "{{shareId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Security Audit Trail (Admin)",
+      "item": [
+        {
+          "name": "Query Audit Logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/audit-logs?page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "audit-logs"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. System Administration (SysAdmin Only)",
+      "item": [
+        {
+          "name": "List All Registered Accounts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users?page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

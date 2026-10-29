@@ -1,0 +1,356 @@
+openapi: 3.0.3
+info:
+  title: Digital Document Vault API
+  version: 1.0.0
+  description: >
+    Production-grade Digital Document Vault REST API with zero-trust RBAC,
+    content-type magic-byte inspection, path traversal protection, tamper-evident versioning,
+    and structured audit logging.
+servers:
+  - url: http://localhost:8080
+    description: Local Spring Boot API Gateway
+  - url: http://localhost/api
+    description: Production Nginx Reverse Proxy
+paths:
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate user session
+      description: Validates user credentials, increments failed attempt counters on failure, rotates session ID, and issues HttpOnly session cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: owner@vault.local
+                password:
+                  type: string
+                  format: password
+                  example: OwnerPassword123!
+      responses:
+        '200':
+          description: Session authenticated successfully
+        '401':
+          description: Invalid username or password
+        '423':
+          description: Account is locked due to consecutive authentication failures
+
+  /api/auth/me:
+    get:
+      tags: [Authentication]
+      summary: Retrieve currently authenticated user principal
+      responses:
+        '200':
+          description: Authenticated user details
+        '401':
+          description: Unauthenticated session
+
+  /api/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new self-service user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, fullName, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                email:
+                  type: string
+                  format: email
+                fullName:
+                  type: string
+                  maxLength: 150
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+      responses:
+        '201':
+          description: User registered successfully
+        '400':
+          description: Validation error or duplicate username/email
+
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Invalidate user session and clear authentication cookies
+      responses:
+        '200':
+          description: Logged out successfully
+
+  /api/documents:
+    post:
+      tags: [Documents]
+      summary: Upload a new document into secure private vault
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [title, file]
+              properties:
+                title:
+                  type: string
+                  maxLength: 200
+                description:
+                  type: string
+                  maxLength: 1000
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Document uploaded and encrypted successfully
+        '400':
+          description: Invalid file format, magic bytes mismatch, or path traversal detected
+        '413':
+          description: File size exceeds 25 MB limit
+    get:
+      tags: [Documents]
+      summary: List owned documents with search, sorting, and pagination
+      parameters:
+        - name: query
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, ARCHIVED]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, title, currentFileSizeBytes]
+        - name: sortDirection
+          in: query
+          schema:
+            type: string
+            enum: [ASC, DESC]
+      responses:
+        '200':
+          description: Paged list of documents
+
+  /api/documents/{id}/metadata:
+    get:
+      tags: [Documents]
+      summary: Get document metadata, versions timeline, and active permissions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Document details
+        '403':
+          description: Access denied (unauthorized or expired share)
+        '404':
+          description: Document not found
+
+  /api/documents/{id}/download:
+    get:
+      tags: [Documents]
+      summary: Securely stream document binary payload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Binary file stream with Content-Disposition attachment header
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="Report.pdf"
+            X-Content-Type-Options:
+              schema:
+                type: string
+                example: nosniff
+        '403':
+          description: Forbidden (insufficient permission or VIEW-only share)
+
+  /api/documents/{id}/versions:
+    post:
+      tags: [Documents]
+      summary: Upload new version for an existing document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: New revision saved
+
+  /api/documents/{id}/shares:
+    post:
+      tags: [Sharing]
+      summary: Grant VIEW or DOWNLOAD permission to another user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, permissionType]
+              properties:
+                identifier:
+                  type: string
+                  example: colleague@vault.local
+                permissionType:
+                  type: string
+                  enum: [VIEW, DOWNLOAD]
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Permission granted successfully
+
+  /api/documents/{id}/shares/{shareId}:
+    delete:
+      tags: [Sharing]
+      summary: Immediately revoke access permission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: shareId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Permission revoked immediately
+
+  /api/documents/shared-with-me:
+    get:
+      tags: [Sharing]
+      summary: List documents shared with current user
+      responses:
+        '200':
+          description: Paged list of shared documents
+
+  /api/admin/audit-logs:
+    get:
+      tags: [Administration]
+      summary: Retrieve system security audit log entries
+      parameters:
+        - name: eventType
+          in: query
+          schema:
+            type: string
+        - name: actorUsername
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paged audit entries
+
+  /api/admin/users:
+    get:
+      tags: [Administration]
+      summary: List registered users (System Admin only)
+      responses:
+        '200':
+          description: Paged user directory
+
+  /api/admin/users/{id}/status:
+    patch:
+      tags: [Administration]
+      summary: Update user account status (ACTIVE, LOCKED, DISABLED)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [ACTIVE, LOCKED, DISABLED]
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Status updated successfully

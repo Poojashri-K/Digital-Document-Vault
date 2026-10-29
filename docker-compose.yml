@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Database Service
+  postgres:
+    image: postgres:16-alpine
+    container_name: vault-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vaultdb}
+      POSTGRES_USER: ${POSTGRES_USER:-vaultadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault_secure_password_2026}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - vault-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vaultadmin} -d ${POSTGRES_DB:-vaultdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Backend Spring Boot API
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: vault-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-vaultdb}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-vaultadmin}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-vault_secure_password_2026}
+      VAULT_STORAGE_LOCAL_BASE_DIR: /vault/storage
+      VAULT_SECURITY_SESSION_TIMEOUT_MINUTES: 30
+      VAULT_SECURITY_MAX_FAILED_LOGIN_ATTEMPTS: 5
+    volumes:
+      - vault_storage:/vault/storage
+    ports:
+      - "8080:8080"
+    networks:
+      - vault-network
+
+  # Frontend Nginx + React SPA Reverse Proxy
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: vault-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "3000:80"
+    networks:
+      - vault-network
+
+volumes:
+  postgres_data:
+    name: vault_postgres_data
+  vault_storage:
+    name: vault_file_storage
+
+networks:
+  vault-network:
+    name: vault-network
+    driver: bridge
