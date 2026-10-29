@@ -1,0 +1,30 @@
+# Build and dependencies
+target/
+**/target/
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Tools & Local Cache
+.tools/
+.m2/
+.npm/
+
+# Environment and sensitive data
+.env
+.env.local
+*.log
+logs/
+
+# Storage
+vault_storage/
+**/vault_storage/
+uploads/
+
+# IDE & OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
