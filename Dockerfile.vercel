@@ -1,0 +1,37 @@
+# Multi-stage Dockerfile for Digital Document Vault Backend on Vercel Container Runtime
+# Stage 1: Build stage with Maven and Eclipse Temurin JDK 21
+FROM maven:3.9-eclipse-temurin-21-jammy AS builder
+WORKDIR /workspace/app
+
+# Copy pom.xml and pre-fetch dependencies for layer caching
+COPY backend/pom.xml .
+RUN mvn dependency:go-offline -B || true
+
+# Copy backend source code and build executable Spring Boot fat JAR
+COPY backend/src ./src
+RUN mvn clean package -DskipTests -B
+
+# Stage 2: Minimal runtime image with Eclipse Temurin JRE 21
+FROM eclipse-temurin:21-jre-jammy
+WORKDIR /app
+
+# Create non-privileged service user
+RUN groupadd -r vaultgroup && useradd -r -g vaultgroup -m vaultuser
+
+# Create temporary upload directory inside /tmp (writable in Vercel serverless containers)
+RUN mkdir -p /tmp/vault-storage && chown -R vaultuser:vaultgroup /tmp/vault-storage
+
+# Copy built JAR from builder stage
+COPY --from=builder /workspace/app/target/digital-document-vault-1.0.0.jar app.jar
+RUN chown vaultuser:vaultgroup app.jar
+
+USER vaultuser
+
+# Safe default environment settings
+ENV SPRING_PROFILES_ACTIVE=docker
+ENV VAULT_STORAGE_LOCATION=/tmp/vault-storage
+
+EXPOSE 8080
+
+# Dynamically bind Spring Boot server to Vercel's $PORT (fallback to 8080 for local)
+ENTRYPOINT ["sh", "-c", "java -XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Xss512k -Dserver.port=${PORT:-8080} -Djava.security.egd=file:/dev/./urandom -jar app.jar"]
