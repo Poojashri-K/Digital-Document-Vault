@@ -15,7 +15,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({
   onFileSelect,
   selectedFile,
   error: parentError,
-  maxSizeMb = 20,
+  maxSizeMb = 25,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
